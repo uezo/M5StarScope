@@ -50,7 +50,8 @@ the real sky without ending the experience at the display.
 - [M5Stack AtomS3R (C126)](https://docs.m5stack.com/en/core/AtomS3R)
 - One HY2.0-4P/Grove cable
 - A USB-C data cable for flashing each device
-- A viewing tube and a rigid mount for the AtomS3R
+- A viewing tube, ideally about 50 mm in inner diameter and 250 mm long, plus a
+  rigid mount for the AtomS3R
 - [PlatformIO Core](https://docs.platformio.org/en/stable/core/installation/index.html)
   or PlatformIO IDE for VS Code
 
@@ -165,6 +166,21 @@ The HY2.0-4P/Grove cable carries both power and UART data:
 | Red | 5 V out | 5 V in |
 | Yellow | GPIO 10 TX | GPIO 2 RX |
 | White | GPIO 11 RX | GPIO 1 TX |
+
+A tube with an inner diameter of approximately 50 mm and a length of
+approximately 250 mm is recommended, but the dimensions do not need to be
+exact.
+
+> [!TIP]
+> No suitable pipe? Roll up a sheet of drawing paper or light cardstock and
+> secure it with tape. The first M5StarScope prototype was built exactly this
+> way. 😂
+
+<p align="center">
+  <img src="docs/m5starscope-paper-prototype.jpg" alt="The first M5StarScope prototype made from rolled drawing paper" width="720">
+  <br>
+  <em>The first paper-tube prototype</em>
+</p>
 
 Mount the AtomS3R rigidly on top of the tube using this orientation:
 
