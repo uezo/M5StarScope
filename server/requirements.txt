@@ -1,0 +1,4 @@
+aiavatar
+python-dotenv
+fastapi
+uvicorn

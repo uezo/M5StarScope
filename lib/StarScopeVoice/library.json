@@ -1,0 +1,12 @@
+{
+  "name": "StarScopeVoice",
+  "version": "0.1.0",
+  "description": "Optional Wi-Fi push-to-talk voice assistant for M5StarScope",
+  "frameworks": "arduino",
+  "platforms": "espressif32",
+  "dependencies": {
+    "links2004/WebSockets": "2.7.3",
+    "WiFi": "*",
+    "WiFiClientSecure": "*"
+  }
+}

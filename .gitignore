@@ -1,0 +1,53 @@
+# Prerequisites
+*.d
+
+# Compiled Object files
+*.slo
+*.lo
+*.o
+*.obj
+
+# Precompiled Headers
+*.gch
+*.pch
+
+# Compiled Dynamic libraries
+*.so
+*.dylib
+*.dll
+
+# Fortran module files
+*.mod
+*.smod
+
+# Compiled Static libraries
+*.lai
+*.la
+*.a
+*.lib
+
+# Executables
+*.exe
+*.out
+*.app
+
+# OS metadata
+.DS_Store
+
+# Editor-generated files
+.vscode/
+
+# PlatformIO
+.pio/
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+
+# Server runtime data
+recorded_voices/
+*.db
+
+# Secrets
+.env
