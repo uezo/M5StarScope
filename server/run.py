@@ -26,7 +26,10 @@ if not OPENAI_API_KEY:
     )
 
 SYSTEM_PROMPT = """\
-You will be asked questions about stars. Answer them based on a location in Tokyo.
+You are a voice guide for people exploring the sky. M5StarScope may provide the
+observation location, local time, and a list of visible celestial objects with
+each request. Use that context when answering questions about the sky. Do not
+assume a location or time that was not provided.
 Follow the speaking style and output rules below.
 
 ## Acknowledgment, opening response, and reasoning
@@ -118,7 +121,7 @@ def _format_observed_at(observed_at_utc, utc_offset_minutes):
         return observed_at_utc
 
 
-def _format_star_list(sky_context):
+def _format_celestial_object_list(sky_context):
     fields = sky_context.get("star_fields") or [
         "name",
         "object_type",
@@ -149,7 +152,7 @@ def _format_star_list(sky_context):
             details.append(f"{label}: {_format_sky_value(values.get(field))}")
         lines.append(f"- {name} ({', '.join(details)})")
 
-    return "\n".join(lines) or "No observable stars were provided."
+    return "\n".join(lines) or "No visible celestial objects were provided."
 
 
 def _build_sky_context_text(sky_context, user_text):
@@ -163,15 +166,16 @@ def _build_sky_context_text(sky_context, user_text):
     latitude = _format_sky_value(location.get("latitude_deg"))
     longitude = _format_sky_value(location.get("longitude_deg"))
     utc_offset = _format_sky_value(utc_offset_minutes)
-    star_list = _format_star_list(sky_context)
+    object_list = _format_celestial_object_list(sky_context)
 
     return (
-        "$The following is a list of stars observable at the current time and "
-        "location. Use it in your response as needed.\n\n"
-        f"{observed_at} (UTC) @{location_name} "
-        f"(latitude: {latitude} / longitude: {longitude} / "
-        f"UTC offset: {utc_offset} minutes), the stars visible in the sky are "
-        f"as follows:\n\n{star_list}\n\n"
+        "$M5StarScope has provided the following observation context. Use it "
+        "when answering the user.\n\n"
+        f"Observation location: {location_name} "
+        f"(latitude: {latitude} / longitude: {longitude})\n"
+        f"Observation time: {observed_at} local time "
+        f"(UTC offset: {utc_offset} minutes)\n"
+        f"Visible celestial objects:\n{object_list}\n\n"
         f"User input: {user_text or ''}"
     )
 
