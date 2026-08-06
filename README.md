@@ -155,7 +155,7 @@ desk.
 
 ## 🛠️ Hardware assembly
 
-![M5StarScope hardware connection](docs/m5starscope-wiring.png)
+![M5StarScope hardware connection](docs/m5starscope-wiring.svg)
 
 The HY2.0-4P/Grove cable carries both power and UART data:
 
