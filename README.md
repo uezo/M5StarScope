@@ -16,6 +16,14 @@ The stars are still there behind ceilings, clouds, daylight, and city lights.
 M5StarScope makes that real sky visible anytime and anywhere, while keeping its
 core astronomy and rendering completely offline.
 
+<p align="center">
+  <a href="https://youtu.be/l9LdYYFfEAo">
+    <img src="https://img.youtube.com/vi/l9LdYYFfEAo/maxresdefault.jpg" alt="Watch the full M5StarScope demo on YouTube" width="800">
+  </a>
+  <br>
+  <a href="https://youtu.be/l9LdYYFfEAo">▶ Watch the full M5StarScope demo on YouTube</a>
+</p>
+
 ## 💎 Features
 
 ### 🔭 A real-world-synced virtual telescope
