@@ -62,11 +62,23 @@ constexpr float kFieldOfViewDeg = 45.0F;
 constexpr float kVoiceSkyMagnitudeLimit = 3.0F;
 constexpr std::uint32_t kVoiceSkyContextIntervalMs = 10U * 60U * 1000U;
 constexpr std::uint32_t kConfigurationRestartDelayMs = 800;
+constexpr std::uint32_t kPowerButtonArmDelayMs = 1500;
 constexpr char kDefaultVoiceWebSocketHost[] = "192.168.1.100";
 constexpr std::uint16_t kDefaultVoiceWebSocketPort = 8000;
 constexpr char kDefaultVoiceWebSocketPath[] = "/ws";
 constexpr std::uint8_t kDefaultVoiceVolumePercent = 85;
 constexpr std::size_t kCitySearchResultLimit = 20;
+
+// M5PM1 registers not yet wrapped by the pinned M5Unified release. Keeping
+// these few accesses here avoids adding another power-management dependency.
+constexpr std::uint8_t kPm1PowerConfigRegister = 0x06;
+constexpr std::uint8_t kPm1PowerHoldRegister = 0x07;
+constexpr std::uint8_t kPm1ButtonConfigRegister = 0x49;
+constexpr std::uint8_t kPm1ButtonConfig2Register = 0x4A;
+constexpr std::uint8_t kPm1LedEnableMask = 1U << 4U;
+constexpr std::uint8_t kPm1LdoPowerHoldMask = 1U << 5U;
+constexpr std::uint8_t kPm1SingleResetDisableMask = 1U << 0U;
+constexpr std::uint8_t kPm1DoublePowerOffDisableMask = 1U << 0U;
 
 // The initial bracket contract: Atom sensor +X points down the tube, +Z points
 // away from the tube. Change these offsets after the physical bracket is tested.
@@ -404,6 +416,9 @@ struct VoiceSkySnapshot {
 
 portMUX_TYPE voiceSkySnapshotMux = portMUX_INITIALIZER_UNLOCKED;
 VoiceSkySnapshot voiceSkySnapshot;
+std::uint32_t powerButtonArmAtMs = 0;
+bool powerButtonArmed = false;
+bool powerButtonSleepAvailable = false;
 
 std::uint16_t displayColor(std::uint16_t color) {
   if (!redNightMode || color == TFT_BLACK) return color;
@@ -424,6 +439,92 @@ void setRedNightMode(bool enabled) {
   redNightMode = enabled;
   M5.Display.setBrightness(enabled ? kNightDisplayBrightness
                                    : kNormalDisplayBrightness);
+}
+
+bool configurePowerButtonSleep(std::uint32_t nowMs) {
+  auto& pmic = M5.Power.M5pm1;
+  bool ok = pmic.isEnabled();
+
+  // A single click normally resets the ESP32. Turn that behavior into a PMIC
+  // interrupt while retaining the double-click full-off escape hatch.
+  ok = pmic.bitOn(kPm1ButtonConfigRegister,
+                  kPm1SingleResetDisableMask) &&
+       ok;
+  ok = pmic.bitOff(kPm1ButtonConfig2Register,
+                   kPm1DoublePowerOffDisableMask) &&
+       ok;
+  ok = pmic.clearWakeSource() && ok;
+  ok = pmic.clearIRQStatus() && ok;
+  ok = pmic.setGPIOIRQMaskBits(0x1F) && ok;
+  ok = pmic.setSystemIRQMaskBits(0x3F) && ok;
+  ok = pmic.setButtonIRQMaskBits(0x06) && ok;
+  ok = pmic.setGPIOMode(m5::M5PM1_Class::gpio1,
+                        m5::M5PM1_Class::output) &&
+       ok;
+  ok = pmic.setGPIODrive(m5::M5PM1_Class::gpio1,
+                         m5::M5PM1_Class::push_pull) &&
+       ok;
+  ok = pmic.setGPIOPull(m5::M5PM1_Class::gpio1,
+                        m5::M5PM1_Class::pull_up) &&
+       ok;
+  ok = pmic.setGPIOOutput(m5::M5PM1_Class::gpio1, true) && ok;
+  ok = pmic.setGPIOFunction(m5::M5PM1_Class::gpio1,
+                            m5::M5PM1_Class::irq) &&
+       ok;
+
+  powerButtonArmAtMs = nowMs + kPowerButtonArmDelayMs;
+  powerButtonArmed = false;
+  powerButtonSleepAvailable = ok;
+  if (!ok) {
+    // Do not strand the device with neither the new handler nor the original
+    // reset action available if PMIC setup only partially succeeded.
+    pmic.bitOff(kPm1ButtonConfigRegister, kPm1SingleResetDisableMask);
+  }
+  Serial.printf("[POWER] single-click L1 sleep %s\n",
+                ok ? "ready" : "unavailable");
+  return ok;
+}
+
+void enterL1Sleep() {
+  auto& pmic = M5.Power.M5pm1;
+  Serial.println("[POWER] entering L1 sleep");
+
+  M5.Power.setExtOutput(false);
+  M5.Display.setBrightness(0);
+  M5.Display.sleep();
+
+  // Keep 3V3_L1 alive for the RX8130 RTC, then ask M5PM1 to shut down the
+  // ESP32/display rails. The next power-button click performs a normal boot.
+  const bool configured =
+      pmic.setLDOOutput(true) &&
+      pmic.bitOn(kPm1PowerHoldRegister, kPm1LdoPowerHoldMask) &&
+      pmic.bitOn(kPm1PowerConfigRegister, kPm1LedEnableMask);
+  delay(120);
+  if (configured && pmic.powerOff()) {
+    while (true) delay(1000);
+  }
+
+  Serial.println("[POWER] ERROR: could not enter L1 sleep");
+  M5.Display.wakeup();
+  setRedNightMode(redNightMode);
+  M5.Power.setExtOutput(true);
+}
+
+void handlePowerButton(std::uint32_t nowMs) {
+  if (!powerButtonSleepAvailable) return;
+
+  if (!powerButtonArmed) {
+    if (static_cast<std::int32_t>(nowMs - powerButtonArmAtMs) < 0) return;
+    // The click used to wake the device can still be present in IRQ status.
+    // Discard it once after boot so wake-up cannot immediately sleep again.
+    M5.Power.M5pm1.clearButtonIRQStatus();
+    powerButtonArmed = true;
+    return;
+  }
+
+  // M5.update() has already consumed the PMIC IRQ and translated it into the
+  // public power-button state by the time this handler runs.
+  if (M5.BtnPWR.wasClicked()) enterL1Sleep();
 }
 
 CivilTime readRtcUtc() {
@@ -1416,6 +1517,7 @@ void setup() {
   M5.BtnA.setHoldThresh(kButtonHoldMs);
   M5.BtnB.setHoldThresh(kButtonHoldMs);
   M5.Power.setExtOutput(true);
+  configurePowerButtonSleep(millis());
 
   settings.begin();
   orientation.begin();
@@ -1469,6 +1571,7 @@ void setup() {
 void loop() {
   M5.update();
   const std::uint32_t nowMs = millis();
+  handlePowerButton(nowMs);
   orientation.update(nowMs);
 
   if (configurationTransitionPending) {

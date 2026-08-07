@@ -122,6 +122,12 @@ recalculate the declination. Saving the page copies the phone's current UTC
 time to the StopWatch RTC. All settings are stored in the StopWatch NVS rather
 than compiled into the firmware.
 
+When putting the StopWatch away, short-press the power button once to enter the
+low-power L1 mode while keeping the RTC running. Short-press it once again to
+restart the application with the saved time and settings. Avoid the normal
+double-press power-off except as an emergency fallback: it cuts power to the
+RTC, so the stored date and time can be lost.
+
 The city catalogue supplies the standard UTC offset. Daylight saving rules
 change over time and are intentionally left as a manual adjustment. Magnetic
 declination is calculated from the selected coordinates and date using the
