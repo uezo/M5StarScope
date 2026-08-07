@@ -84,7 +84,6 @@ tts = OpenAISpeechSynthesizer(
     model="gpt-4o-mini-tts",
     # speaker="alloy",
     instructions="Speak as a guide for users observing the stars. Speak clearly and at a brisk pace.",
-    # wav_sample_rate=16000,
     debug=True
 )
 
