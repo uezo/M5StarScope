@@ -1,0 +1,10 @@
+{
+  "name": "StarScopeNetwork",
+  "version": "0.1.0",
+  "description": "Shared background Wi-Fi connection for M5StarScope services",
+  "frameworks": "arduino",
+  "platforms": "espressif32",
+  "dependencies": {
+    "WiFi": "*"
+  }
+}
