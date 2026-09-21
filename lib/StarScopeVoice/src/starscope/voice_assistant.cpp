@@ -51,7 +51,8 @@ constexpr std::size_t kInvokeBufferBytes =
 // and provides backpressure headroom while the server emits a response faster
 // than the speaker can consume it.
 constexpr std::size_t kPlaybackBufferBytes = 1024 * 1024;
-constexpr std::size_t kPlaybackStartBytes = 4096;
+// Keep the same amount of audio in reserve at every incoming PCM sample rate.
+constexpr std::uint32_t kPlaybackStartMs = 500;
 constexpr std::size_t kPlaybackSubmitBytes = 4096;
 // The server is configured for 2048-byte PCM frames. Leave room for larger
 // diagnostic settings without permitting an unbounded WebSocket allocation.
@@ -1101,9 +1102,15 @@ class VoiceAssistant::Impl {
       activePlaybackBytes_ = 0;
     }
 
+    const std::size_t frameBytes =
+        playbackChannels_ * sizeof(std::int16_t);
+    const std::size_t startFrames =
+        (playbackSampleRate_ * kPlaybackStartMs + 999U) / 1000U;
+    const std::size_t startBytes = startFrames * frameBytes;
+    // A completed short response must play even if it cannot fill the reserve.
     if (playbackBytes_ > 0 &&
         (playbackStarted_ || responseComplete_ ||
-         playbackBytes_ >= kPlaybackStartBytes)) {
+         playbackBytes_ >= startBytes)) {
       if (!speakerRunning_) {
         if (M5.Mic.isRunning()) M5.Mic.end();
         if (!M5.Speaker.begin()) {
@@ -1114,8 +1121,6 @@ class VoiceAssistant::Impl {
         speakerRunning_ = true;
       }
 
-      const std::size_t frameBytes =
-          playbackChannels_ * sizeof(std::int16_t);
       std::size_t submitBytes = std::min(
           {playbackBytes_, kPlaybackSubmitBytes,
            kPlaybackBufferBytes - playbackHead_});
