@@ -33,6 +33,9 @@ struct VoiceAssistantConfig {
   VoiceSkyContextWriter skyContextWriter = nullptr;
   void* skyContextUserData = nullptr;
   std::uint32_t skyContextIntervalMs = 10U * 60U * 1000U;
+  // Leave Wi-Fi setup/reconnection to a shared WifiConnection when false.
+  // The default preserves standalone VoiceAssistant users' existing behavior.
+  bool manageWifi = true;
   VoiceViewContextWriter viewContextWriter = nullptr;
   void* viewContextUserData = nullptr;
 };

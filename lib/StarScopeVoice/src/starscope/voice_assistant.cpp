@@ -355,12 +355,14 @@ class VoiceAssistant::Impl {
         static_cast<unsigned>(kDecodeScratchBytes / 1024),
         static_cast<unsigned>(ESP.getFreePsram()));
 
-    WiFi.persistent(false);
-    WiFi.mode(WIFI_STA);
-    WiFi.setAutoReconnect(true);
-    WiFi.setSleep(false);
-    WiFi.begin(config_.wifiSsid, config_.wifiPassword);
-    lastWifiAttemptMs_ = nowMs_;
+    if (config_.manageWifi) {
+      WiFi.persistent(false);
+      WiFi.mode(WIFI_STA);
+      WiFi.setAutoReconnect(true);
+      WiFi.setSleep(false);
+      WiFi.begin(config_.wifiSsid, config_.wifiPassword);
+      lastWifiAttemptMs_ = nowMs_;
+    }
     if (M5.Mic.isRunning()) M5.Mic.end();
     M5.Speaker.stop();
     if (M5.Speaker.isRunning()) M5.Speaker.end();
@@ -496,7 +498,8 @@ class VoiceAssistant::Impl {
       if (state() == VoiceAssistantState::Ready) {
         state_ = VoiceAssistantState::Offline;
       }
-      if (nowMs_ - lastWifiAttemptMs_ >= kWifiRetryMs) {
+      if (config_.manageWifi &&
+          nowMs_ - lastWifiAttemptMs_ >= kWifiRetryMs) {
         lastWifiAttemptMs_ = nowMs_;
         WiFi.reconnect();
       }
