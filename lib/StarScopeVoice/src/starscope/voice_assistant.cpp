@@ -41,7 +41,8 @@ constexpr std::size_t kBase64EncodeInputBlock = 3072;
 constexpr std::size_t kCodecYieldBytes = 24 * 1024;
 // A magnitude-3 sky context is normally 3-8 KiB. Keep a strict upper bound
 // while leaving enough room for escaped location/star names and invoke fields.
-constexpr std::size_t kInvokeJsonOverhead = 16 * 1024;
+constexpr std::size_t kMaximumViewContextBytes = 8 * 1024;
+constexpr std::size_t kInvokeJsonOverhead = 16 * 1024 + kMaximumViewContextBytes;
 constexpr std::size_t kMaximumBase64CaptureBytes =
     4 * ((kMaximumCaptureBytes + 2) / 3);
 constexpr std::size_t kInvokeBufferBytes =
@@ -73,6 +74,9 @@ enum class VoiceCommandType : std::uint8_t {
 struct VoiceCommand {
   VoiceCommandType type;
   std::uint32_t timestampMs;
+  // Ownership moves from the UI to the command queue, then to one capture.
+  // Commit/release commands always carry nullptr.
+  char* viewContext = nullptr;
 };
 
 void* allocatePsram(std::size_t size) {
@@ -183,9 +187,14 @@ class VoiceAssistant::Impl {
       }
     }
     if (commandQueue_) {
+      VoiceCommand pending{};
+      while (xQueueReceive(commandQueue_, &pending, 0) == pdTRUE) {
+        std::free(pending.viewContext);
+      }
       vQueueDelete(commandQueue_);
       commandQueue_ = nullptr;
     }
+    std::free(captureViewContext_);
     freeBuffers();
   }
 
@@ -218,8 +227,26 @@ class VoiceAssistant::Impl {
   void update(std::uint32_t) {}
 
   void pressPushToTalk(std::uint32_t nowMs) {
-    if (uiButtonActive_) return;
-    if (!enqueueCommand(VoiceCommandType::PressPushToTalk, nowMs)) return;
+    if (uiButtonActive_ || !commandQueue_ || !taskHandle_) return;
+    char* viewContext = nullptr;
+    if (config_.viewContextWriter) {
+      viewContext = static_cast<char*>(allocatePsram(kMaximumViewContextBytes));
+      if (viewContext) {
+        const std::size_t length = config_.viewContextWriter(
+            viewContext, kMaximumViewContextBytes, nowMs,
+            config_.viewContextUserData);
+        if (length > 0 && length < kMaximumViewContextBytes) {
+          viewContext[length] = '\0';
+        } else {
+          std::free(viewContext);
+          viewContext = nullptr;
+        }
+      }
+    }
+    if (!enqueueCommand(VoiceCommandType::PressPushToTalk, nowMs, viewContext)) {
+      std::free(viewContext);
+      return;
+    }
     uiButtonActive_ = true;
     uiPttCommitted_ = false;
   }
@@ -398,9 +425,10 @@ class VoiceAssistant::Impl {
     }
   }
 
-  bool enqueueCommand(VoiceCommandType type, std::uint32_t timestampMs) {
+  bool enqueueCommand(VoiceCommandType type, std::uint32_t timestampMs,
+                      char* viewContext = nullptr) {
     if (!commandQueue_ || !taskHandle_) return false;
-    const VoiceCommand command{type, timestampMs};
+    const VoiceCommand command{type, timestampMs, viewContext};
     if (xQueueSend(commandQueue_, &command, 0) == pdTRUE) return true;
     Serial.println("[VOICE] command queue full");
     return false;
@@ -411,7 +439,7 @@ class VoiceAssistant::Impl {
     while (xQueueReceive(commandQueue_, &command, 0) == pdTRUE) {
       switch (command.type) {
         case VoiceCommandType::PressPushToTalk:
-          handlePressPushToTalk(command.timestampMs);
+          handlePressPushToTalk(command.timestampMs, command.viewContext);
           break;
         case VoiceCommandType::CommitPushToTalk:
           handleCommitPushToTalk();
@@ -423,14 +451,22 @@ class VoiceAssistant::Impl {
     }
   }
 
-  void handlePressPushToTalk(std::uint32_t nowMs) {
-    if (buttonActive_) return;
+  void handlePressPushToTalk(std::uint32_t nowMs, char* viewContext) {
+    if (buttonActive_) {
+      std::free(viewContext);
+      return;
+    }
     nowMs_ = nowMs;
     buttonActive_ = true;
     pttCommitted_ = false;
     finishRequested_ = false;
     cancelLocalResponse();
     startCapture();
+    if (state() == VoiceAssistantState::TentativeRecording) {
+      captureViewContext_ = viewContext;
+    } else {
+      std::free(viewContext);
+    }
   }
 
   void handleCommitPushToTalk() {
@@ -835,6 +871,8 @@ class VoiceAssistant::Impl {
     if (M5.Mic.isRunning()) M5.Mic.end();
     captureSamples_ = 0;
     finishRequested_ = false;
+    std::free(captureViewContext_);
+    captureViewContext_ = nullptr;
   }
 
   void logCaptureStats() const {
@@ -947,6 +985,16 @@ class VoiceAssistant::Impl {
         static_cast<std::size_t>(headerLength) + encodedLength;
     if (!appendInvokeText(messageLength, metadataPrefix)) return false;
 
+    if (config_.viewContextWriter) {
+      // Per-capture context is independent of the ten-minute sky refresh.
+      // Allocation/serialization failure must not invite a stale-view fallback.
+      if (!appendInvokeText(messageLength, ",\"view_context\":") ||
+          !appendInvokeText(messageLength, captureViewContext_ ? captureViewContext_ :
+              "{\"valid\":false,\"capture_phase\":\"speech_start\"}")) {
+        return false;
+      }
+    }
+
     const std::uint32_t contextNowMs = millis();
     if (skyContextDue(contextNowMs)) {
       const std::size_t withoutSkyContext = messageLength;
@@ -1019,11 +1067,12 @@ class VoiceAssistant::Impl {
       lastSkyContextRevisionSent_ = includedSkyContextRevision;
     }
     Serial.printf(
-        "[VOICE] invoke samples=%u bytes=%u sent=%d sky_context=%d\n"
+        "[VOICE] invoke samples=%u bytes=%u sent=%d sky_context=%d view_context=%d\n"
         "[VOICE][LATENCY] encode=%u ms send=%u ms release_to_send=%u ms\n",
         static_cast<unsigned>(captureSamples_),
         static_cast<unsigned>(messageLength), sent ? 1 : 0,
         includedSkyContext ? 1 : 0,
+        captureViewContext_ ? 1 : 0,
         static_cast<unsigned>(encodedMs - encodeStartedMs),
         static_cast<unsigned>(sentMs - encodedMs),
         static_cast<unsigned>(sentMs - releaseRequestedMs_));
@@ -1209,6 +1258,7 @@ class VoiceAssistant::Impl {
 
   std::int16_t* captureBuffer_ = nullptr;
   std::size_t captureSamples_ = 0;
+  char* captureViewContext_ = nullptr;
   char* invokeBuffer_ = nullptr;
   std::uint8_t* decodeScratch_ = nullptr;
   std::uint8_t* playbackBuffer_ = nullptr;

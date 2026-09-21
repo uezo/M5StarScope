@@ -11,6 +11,13 @@ using VoiceSkyContextWriter = std::size_t (*)(
     char* destination, std::size_t capacity, std::uint32_t nowMs,
     void* userData);
 
+// Same JSON writer contract, but called synchronously on the caller's task at
+// pressPushToTalk(), before queueing the recording command. The returned JSON
+// is owned by that recording until upload/discard; never read live UI state
+// from the voice worker. Capacity is 8 KiB including the terminating NUL.
+// Returning zero sends an explicit invalid view instead of reusing an old one.
+using VoiceViewContextWriter = VoiceSkyContextWriter;
+
 struct VoiceAssistantConfig {
   const char* wifiSsid = nullptr;
   const char* wifiPassword = nullptr;
@@ -26,6 +33,8 @@ struct VoiceAssistantConfig {
   VoiceSkyContextWriter skyContextWriter = nullptr;
   void* skyContextUserData = nullptr;
   std::uint32_t skyContextIntervalMs = 10U * 60U * 1000U;
+  VoiceViewContextWriter viewContextWriter = nullptr;
+  void* viewContextUserData = nullptr;
 };
 
 enum class VoiceAssistantState : std::uint8_t {
